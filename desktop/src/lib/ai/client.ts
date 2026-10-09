@@ -1,5 +1,7 @@
 import { fetch } from '@tauri-apps/plugin-http'
 import { PLACEHOLDERS, type AiConnection } from './config'
+import { FORK_LOCAL_OLLAMA } from '~/fork/defaults' // fork
+import { LocalOllama } from '~/fork/ollama/client' // fork: local Ollama behind the GPU gate
 
 /** Output ceiling; the input side of the context is what is left after it and a margin. */
 const MAX_OUTPUT_TOKENS = 8_192
@@ -240,7 +242,8 @@ class Claude implements AiClient {
 }
 
 export function createClient(connection: AiConnection): AiClient {
-	if (connection.platform === 'ollama') return new Ollama(connection)
+	// fork: thinking off, model auto-picked, VRAM shared with whisper (docs/FORK.md).
+	if (connection.platform === 'ollama') return FORK_LOCAL_OLLAMA ? new LocalOllama(connection) : new Ollama(connection)
 	if (connection.platform === 'openai') return new OpenAICompatible(connection)
 	return new Claude(connection)
 }

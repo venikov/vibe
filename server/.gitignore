@@ -30,3 +30,7 @@ baseline/
 baseline/models/
 # Reference clones for study; each carries its own .git
 plans/
+# fork: build-libs-cuda work dirs (libs/cuda.chore)
+ggml-src-cuda/
+ggml-build-cuda/
+ggml-build-cuda-x64/

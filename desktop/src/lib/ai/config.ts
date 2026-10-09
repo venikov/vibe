@@ -112,8 +112,8 @@ export function presetPrompt(id: string) {
 
 export const DEFAULT_AI: AiSettings = {
 	connection: {
-		platform: 'claude',
-		model: defaultModel('claude'),
+		platform: 'ollama', // fork: local Ollama by default (docs/FORK.md)
+		model: defaultModel('ollama'),
 		contextTokens: 65_536,
 		claudeApiKey: '',
 		ollamaBaseUrl: 'http://localhost:11434',
@@ -128,7 +128,8 @@ export const DEFAULT_AI: AiSettings = {
 
 /** The default model for a platform, so switching platforms never leaves a Claude model on Ollama. */
 export function defaultModel(platform: AiPlatform) {
-	return platform === 'ollama' ? 'gemma4:e2b' : platform === 'openai' ? 'gpt-5.6-luna' : 'claude-sonnet-5'
+	// fork: '' on Ollama means "auto" — the preferred model if installed, else the first one (fork/ollama).
+	return platform === 'ollama' ? '' : platform === 'openai' ? 'gpt-5.6-luna' : 'claude-sonnet-5'
 }
 
 /** Old `%s` prompts become `{transcript}` or `{text}`; anything else is left alone. */

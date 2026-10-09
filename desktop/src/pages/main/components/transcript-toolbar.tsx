@@ -5,6 +5,7 @@ import { m } from '~/paraglide/messages.js'
 import { usePreferenceProvider } from '~/providers/preference'
 import { Button } from '~/components/ui/button'
 import ResummarizeDialog from '~/components/resummarize-dialog'
+import { TranslateTranscriptButton } from '~/fork/ui/translate-entry' // fork
 import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover'
 import { Spinner } from '~/components/ui/spinner'
 import { Switch } from '~/components/ui/switch'
@@ -362,6 +363,14 @@ export default function TranscriptToolbar({
 							</Button>
 
 							<SummaryMenu job={job} tab={tab} setTab={setTab} />
+
+							{/* fork: translate the transcript through local Ollama (docs/FORK.md) */}
+							<TranslateTranscriptButton
+								name={job?.name ?? 'transcript'}
+								segments={job?.segments ?? []}
+								speakerNames={job?.speakerNames}
+								disabled={job?.status === 'running'}
+							/>
 
 							<ViewOptions options={options} />
 

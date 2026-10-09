@@ -1,6 +1,9 @@
 use std::env;
 use std::path::{Path, PathBuf};
 
+#[path = "build_cuda.rs"]
+mod cuda; // fork: CUDA backend linking (docs/FORK.md)
+
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let root = manifest_dir.parent().and_then(Path::parent).unwrap();
@@ -42,9 +45,9 @@ fn main() {
 
     println!("cargo:include={}", include_dir.display());
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
-    for lib in ["ggml", "ggml-base"] {
-        println!("cargo:rustc-link-lib=static={lib}");
-    }
+    println!("cargo:rustc-link-lib=static=ggml");
+    cuda::link(&lib_dir); // fork: ggml -> ggml-cuda -> ggml-base, for GNU ld's link order
+    println!("cargo:rustc-link-lib=static=ggml-base");
     // x86_64 carries two CPU backends, AVX2 and baseline, chosen at startup (see cpu_variant.rs).
     if x86_variants() {
         for lib in ["ggml-cpu-hsw", "ggml-cpu-x64"] {

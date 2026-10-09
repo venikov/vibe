@@ -1,0 +1,13 @@
+{
+	"bundle": {
+		"createUpdaterArtifacts": false,
+		"resources": {
+			"binaries/cuda/*.dll": "./"
+		}
+	},
+	"plugins": {
+		"updater": {
+			"endpoints": []
+		}
+	}
+}

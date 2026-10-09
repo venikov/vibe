@@ -1,0 +1,82 @@
+# fork: CUDA build of the ggml libraries for Windows MSVC. This is a fork module, kept
+# out of libs.chore so upstream merges stay clean; see docs/FORK.md. Included from the
+# root chorefile next to libs.chore, so $ROOT, $version, $ggml_git and the stage-lib /
+# stage-cpu-variant tasks are shared with it.
+#
+# build-libs-cuda mirrors build-libs (same ggml tag, same libs/patches, same two CPU
+# variants on x86_64) with the CUDA backend added beside Vulkan, and installs the result
+# straight into libs/lib instead of packaging it for a release. It builds in its own
+# directories (ggml-src-cuda, ggml-build-cuda, ggml-build-cuda-x64) so it never clobbers
+# upstream's build-libs trees.
+#
+# Needs the CUDA toolkit (nvcc, CUDA_PATH) and the Vulkan SDK on the build machine.
+# VIBE_CUDA_ARCHS overrides the CUDA architectures (default 86, e.g. "75;86;89").
+
+# Build ggml with CUDA + Vulkan for Windows MSVC and install it into libs/lib.
+task build-libs-cuda {
+	if $OS != windows { fail "build-libs-cuda supports Windows MSVC only (host OS: $OS)" }
+	if $ARCH != x86_64 { fail "build-libs-cuda supports x86_64 only (host arch: $ARCH)" }
+	flavor=$(lib-flavor)
+	if $flavor != msvc { fail "build-libs-cuda needs the MSVC toolchain (lib flavor: $flavor)" }
+	if !exists $ROOT/libs/include/ggml.h { fail "missing native headers; run chore fetch-headers" }
+
+	arch=86
+	if env VIBE_CUDA_ARCHS { arch=$(env VIBE_CUDA_ARCHS) }
+	src=$ROOT/ggml-src-cuda
+	build=$ROOT/ggml-build-cuda
+	build_x64=$ROOT/ggml-build-cuda-x64
+	pkg=$ROOT/ggml-build-cuda/pkg
+	echo "ggml: $version"
+	echo "cuda archs: $arch"
+
+	remove $src
+	mkdir $src
+	cd $src
+	git init
+	git remote add origin $ggml_git
+	git fetch --depth 1 origin $version
+	git checkout FETCH_HEAD
+	git submodule update --init --depth 1 --recursive
+	for patch in $(find $ROOT/libs/patches *.patch) {
+		git apply --verbose $patch
+	}
+	cd $ROOT
+
+	# Same as build-libs on Windows, plus CUDA. Vulkan's loader is opened at runtime
+	# (libs/patches/0003); CUDA's runtime is linked by ggml-rs-sys (build_cuda.rs).
+	remove $build
+	flags="-DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DGGML_BUILD_EXAMPLES=OFF -DGGML_BUILD_TESTS=OFF -DGGML_NATIVE=OFF"
+	flags="$flags -DGGML_VULKAN=ON -DGGML_VULKAN_DYNAMIC_LOADER=ON"
+	cmake -S $src -B $build $flags -DGGML_CUDA=ON "-DCMAKE_CUDA_ARCHITECTURES=$arch"
+	cmake --build $build --config Release --parallel
+
+	# The AVX baseline CPU backend: CPU only, so neither GPU backend is configured.
+	remove $build_x64
+	x64flags="$flags -DGGML_VULKAN=OFF -DGGML_CUDA=OFF -DGGML_AVX2=OFF -DGGML_FMA=OFF -DGGML_BMI2=OFF"
+	cmake -S $src -B $build_x64 $x64flags
+	cmake --build $build_x64 --config Release --parallel --target ggml-cpu
+
+	remove $pkg
+	mkdir $pkg/lib $pkg/include
+	stage-lib $build $pkg ggml.lib ggml.lib
+	stage-lib $build $pkg ggml-base.lib ggml-base.lib
+	stage-cpu-variant $build $pkg hsw ggml-cpu.lib ggml-cpu-hsw.lib
+	stage-cpu-variant $build_x64 $pkg x64 ggml-cpu.lib ggml-cpu-x64.lib
+	stage-lib $build $pkg ggml-vulkan.lib ggml-vulkan.lib
+	stage-lib $build $pkg ggml-cuda.lib ggml-cuda.lib
+	for header in ggml.h ggml-cpu.h ggml-alloc.h ggml-backend.h gguf.h {
+		copy $src/include/$header $pkg/include/$header
+	}
+
+	# Same layout as build-libs' archive, for carrying the build to another machine.
+	platform=$(platform-id)
+	archive $pkg/lib $pkg/include $ROOT/ggml-libs-$platform-cuda.tar.gz
+	echo "packaged $ROOT/ggml-libs-$platform-cuda.tar.gz"
+
+	# Install in place of whatever fetch-libs or build-libs left there. ggml-rs-sys
+	# links ggml-cuda (and the CUDA runtime) whenever ggml-cuda.lib is present.
+	remove $ROOT/libs/lib
+	move $pkg/lib $ROOT/libs/lib
+	if !exists $ROOT/libs/lib/ggml-cuda.lib { fail "install failed: $ROOT/libs/lib/ggml-cuda.lib missing" }
+	echo "installed CUDA ggml libraries into $ROOT/libs/lib"
+}

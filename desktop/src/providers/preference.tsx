@@ -16,6 +16,7 @@ import { readConfig } from '~/lib/config-store'
 import { message } from '@tauri-apps/plugin-dialog'
 import { invoke } from '@tauri-apps/api/core'
 import type { ModelMetadata } from '~/lib/model'
+import { FORK_DISPLAY_LANGUAGE, FORK_TRANSCRIBE_LANG } from '~/fork/defaults' // fork: Russian defaults
 
 /** Which build of the engine's CPU backend to run; `auto` lets CPUID decide. */
 export type CpuVariant = 'auto' | 'avx2' | 'baseline'
@@ -168,12 +169,12 @@ export interface ModelOptions {
 }
 
 const systemIsDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
-const defaultDisplayLanguage = 'en-US'
+const defaultDisplayLanguage = FORK_DISPLAY_LANGUAGE // fork: was 'en-US'
 
 export const DEFAULT_MODEL_OPTIONS: ModelOptions = {
 	init_prompt: '',
 	verbose: false,
-	lang: 'en',
+	lang: FORK_TRANSCRIBE_LANG, // fork: was 'en'
 	n_threads: 4,
 	temperature: 0.4,
 	max_text_ctx: undefined,
@@ -324,6 +325,8 @@ export function PreferenceProvider({ children }: { children: ReactNode }) {
 	}
 
 	useEffect(() => {
+		// fork: the first run switches the interface (and with it the transcription language) to Russian.
+		if (isFirstRun && getLocale() !== FORK_DISPLAY_LANGUAGE) setDisplayLanguage(FORK_DISPLAY_LANGUAGE)
 		setIsFirstRun(false)
 	}, [])
 
