@@ -9,6 +9,8 @@ ggml_blob=https://github.com/ggml-org/ggml/blob
 # tasks that build, publish and fetch them with it: the git tree hash of that
 # directory names the release they are stored under.
 include libs/libs.chore
+# fork: Windows MSVC CUDA build of the ggml libraries (docs/FORK.md).
+include libs/cuda.chore
 
 # Fetch the pinned ggml headers into libs/include.
 task fetch-headers {
