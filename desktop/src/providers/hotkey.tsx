@@ -17,6 +17,7 @@ import { usePreferenceProvider } from '~/providers/preference'
 import { m } from '~/paraglide/messages.js'
 import { hideDictationIndicator, showDictationIndicator } from '~/lib/dictation-indicator'
 import * as config from '~/lib/config'
+import { gpuGate } from '~/fork/gpu-gate' // fork
 
 // Module-level flag used by home viewModel to skip processing
 // when hotkey-triggered recording finishes
@@ -176,7 +177,9 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
 			// Dictation is a transcription like any other: one start, one terminal event.
 			trackTranscribeStarted('hotkey', path)
 			let transcribed = false
+			let releaseGpu = () => {} // fork: GPU gate, released before the Ollama clean-up (docs/FORK.md)
 			try {
+				releaseGpu = await gpuGate.acquireWhisper() // fork
 				const modelPath = preferenceRef.current.modelPath
 				if (!modelPath) {
 					throw new Error('No model selected')
@@ -198,6 +201,7 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
 				const startedAt = performance.now()
 				const res: transcript.Transcript = await invoke('transcribe', { options })
 				transcribed = true
+				releaseGpu() // fork
 				trackTranscribeSucceeded('hotkey', {
 					durationSeconds: Math.round((performance.now() - startedAt) / 1000),
 					segmentsCount: res.segments.length,
@@ -237,6 +241,7 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
 				finishIndicator('error', { message })
 				await notify('Vibe', message)
 			} finally {
+				releaseGpu() // fork
 				isStoppingRef.current = false
 				isHotkeyRecordingRef.current = false
 				hotkeyRecordingActive = false

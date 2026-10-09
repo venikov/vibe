@@ -12,6 +12,7 @@ import { Input } from '~/components/ui/input'
 import { Spinner } from '~/components/ui/spinner'
 import { Switch } from '~/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select'
+import { OllamaModelPicker } from '~/fork/ollama' // fork
 import { ActionRow, IconAction, SettingsGroup, SettingsNote, SettingsRow, rowControlClass, type SettingsViewModel } from './shared'
 
 export type AiTaskId = keyof AiSettings['tasks']
@@ -159,10 +160,11 @@ export function AiSection({ vm, onOpenPrompt }: { vm: SettingsViewModel; onOpenP
 									onClick={() => openUrl(`https://ollama.com/library/${connection.model}`)}
 								/>
 							}>
-							<Input
+							{/* fork: installed models from /api/tags with a refresh button; '' means auto */}
+							<OllamaModelPicker
+								baseUrl={connection.ollamaBaseUrl}
 								value={connection.model}
-								onChange={(e) => setConnection({ model: e.target.value })}
-								placeholder={defaultModel('ollama')}
+								onChange={(model) => setConnection({ model })}
 								className={`w-64 ${rowControlClass}`}
 							/>
 						</SettingsRow>

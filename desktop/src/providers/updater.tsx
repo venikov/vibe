@@ -1,6 +1,7 @@
 import * as dialog from '@tauri-apps/plugin-dialog'
 import * as process from '@tauri-apps/plugin-process'
 import { DownloadEvent, Update, check as checkUpdate } from '@tauri-apps/plugin-updater'
+import { FORK_DISABLE_UPDATER } from '~/fork/defaults' // fork
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import { m } from '~/paraglide/messages.js'
 import { ErrorModalContext } from './error-modal'
@@ -84,7 +85,8 @@ export function UpdaterProvider({ children }: { children: React.ReactNode }) {
 				console.error(error)
 			}
 		}
-		checkForUpdates()
+		// fork: upstream's updater would replace this CUDA build with one without (docs/FORK.md).
+		if (!FORK_DISABLE_UPDATER) checkForUpdates()
 	}, [])
 
 	async function askForRelaunch() {

@@ -33,6 +33,7 @@ import type { NamedPath, ProjectSource } from '~/lib/types'
 import { ErrorModalContext } from '~/providers/error-modal'
 import { withoutUnsupportedOptions } from '~/lib/model'
 import { type Preference, usePreferenceProvider } from '~/providers/preference'
+import { gpuGate } from '~/fork/gpu-gate' // fork
 
 export type JobStatus = 'queued' | 'running' | 'done' | 'error' | 'cancelled'
 
@@ -378,6 +379,8 @@ export function useTranscribeQueue(): TranscribeQueue {
 			setBatch({ total: runTotal, done: 0, startedAt: runStartedAt, secondsPerFile: null })
 		}
 
+		// fork: whisper and the Ollama model never share the GPU; this waits out an LLM phase (docs/FORK.md).
+		const releaseGpu = await gpuGate.acquireWhisper()
 		try {
 			const current = preferenceRef.current
 			if (!current.modelPath) {
@@ -493,6 +496,7 @@ export function useTranscribeQueue(): TranscribeQueue {
 				commit(jobsRef.current.map((job) => (job.status === 'queued' ? { ...job, status: 'cancelled' } : job)))
 			}
 		} finally {
+			releaseGpu() // fork
 			stopKeepAwake(KEEP_AWAKE.queue)
 			activeIdRef.current = null
 			setActiveId(null)

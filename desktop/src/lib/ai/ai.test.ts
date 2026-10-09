@@ -4,6 +4,8 @@ import { chunkLines, createClient, fillPrompt, inputBudgetBytes, testConnection 
 
 const fetchMock = vi.fn()
 vi.mock('@tauri-apps/plugin-http', () => ({ fetch: (...args: unknown[]) => fetchMock(...args) }))
+// fork: these tests cover upstream's Ollama client; the fork's has its own (src/fork/ollama).
+vi.mock('~/fork/defaults', async (original) => ({ ...(await original<object>()), FORK_LOCAL_OLLAMA: false }))
 
 afterEach(() => fetchMock.mockReset())
 
@@ -107,7 +109,7 @@ describe('createClient', () => {
 
 	it('reports a working connection with its latency', async () => {
 		fetchMock.mockResolvedValue({ ok: true, json: async () => ({ content: [{ text: 'OK' }] }) })
-		const result = await testConnection(DEFAULT_AI.connection)
+		const result = await testConnection({ ...DEFAULT_AI.connection, platform: 'claude' }) // fork: the default platform is ollama
 		expect(result).toMatchObject({ ok: true, reply: 'OK' })
 	})
 })

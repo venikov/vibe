@@ -2,6 +2,7 @@ import { m } from '~/paraglide/messages.js'
 import { ReactComponent as IndicatorIcon } from '~/icons/update-indicator.svg'
 import { RefreshCcw, Settings } from 'lucide-react'
 import { Button } from '~/components/ui/button'
+import { TranslateFileButton } from '~/fork/ui/translate-entry' // fork
 import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip'
 
 interface AppMenuProps {
@@ -26,7 +27,7 @@ export default function AppMenu({ availableUpdate, updateApp, onClickSettings }:
 					<TooltipContent>{m.updateVersion()}</TooltipContent>
 				</Tooltip>
 			)}
-
+			<TranslateFileButton className={iconButtonClassName} /> {/* fork */}
 			<Tooltip>
 				<TooltipTrigger asChild>
 					<Button variant="ghost" size="icon" className={iconButtonClassName} aria-label={m.settings()} onClick={() => onClickSettings()}>
