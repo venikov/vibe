@@ -1,0 +1,173 @@
+name: Fork Windows (CUDA)
+
+# Fork-only build: a Windows NSIS installer whose vibe-server is built from
+# server/ with ggml's CUDA (and Vulkan) backends, instead of upstream's release.
+
+on:
+    workflow_dispatch:
+    push:
+        tags:
+            - "fork-v*"
+
+permissions:
+    contents: write
+
+env:
+    CUDA_VERSION: "12.8.1"
+    # RTX 30xx (Ampere). Override with a semicolon list such as "86;89" for more GPUs.
+    VIBE_CUDA_ARCHS: "86"
+    TARGET_TRIPLE: x86_64-pc-windows-msvc
+
+jobs:
+    build:
+        runs-on: windows-2022
+        timeout-minutes: 180
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: setup pnpm
+              uses: pnpm/action-setup@v4
+              with:
+                  package_json_file: desktop/package.json
+
+            - name: setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 22
+                  cache: pnpm
+                  cache-dependency-path: desktop/pnpm-lock.yaml
+
+            - name: Install Rust stable
+              uses: dtolnay/rust-toolchain@stable
+
+            # server/ is its own workspace; the desktop crate is in the root workspace.
+            - name: Rust cache
+              uses: swatinem/rust-cache@v2
+              with:
+                  workspaces: |
+                      server -> target
+                      . -> target
+
+            - name: setup chore
+              uses: getchore/setup-chore@v1
+              with:
+                  version: v1.6.0
+
+            - name: Install CUDA toolkit
+              id: cuda
+              uses: Jimver/cuda-toolkit@v0.2.30
+              with:
+                  cuda: ${{ env.CUDA_VERSION }}
+                  method: network
+                  sub-packages: '["nvcc","cudart","cublas","cublas_dev","thrust","visual_studio_integration"]'
+
+            - name: Show CUDA
+              shell: pwsh
+              run: |
+                  "CUDA_PATH=$env:CUDA_PATH"
+                  nvcc --version
+
+            - name: Install Vulkan SDK
+              shell: pwsh
+              run: choco install vulkan-sdk -y
+
+            - name: Configure Vulkan SDK
+              shell: pwsh
+              run: |
+                  $sdk = Get-ChildItem "C:\VulkanSDK" -Directory | Sort-Object Name -Descending | Select-Object -First 1
+                  if (-not $sdk) { throw "Vulkan SDK was not installed under C:\VulkanSDK" }
+                  "VULKAN_SDK=$($sdk.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+                  "Vulkan_INCLUDE_DIR=$($sdk.FullName)\Include" | Out-File -FilePath $env:GITHUB_ENV -Append
+                  "Vulkan_LIBRARY=$($sdk.FullName)\Lib\vulkan-1.lib" | Out-File -FilePath $env:GITHUB_ENV -Append
+                  "$($sdk.FullName)\Bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+            # llvm-nm and llvm-objcopy, for the CPU backend variants (stage-cpu-variant).
+            - name: Install LLVM tools
+              shell: pwsh
+              run: |
+                  choco install llvm -y
+                  "C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+            - name: Cache CUDA ggml libs
+              id: libs-cache
+              uses: actions/cache@v4
+              with:
+                  path: server/libs/lib
+                  key: ggml-cuda-${{ runner.os }}-${{ env.CUDA_VERSION }}-${{ env.VIBE_CUDA_ARCHS }}-${{ hashFiles('server/libs/**', 'server/libs/cuda.chore') }}
+
+            - name: Build CUDA ggml libs
+              if: steps.libs-cache.outputs.cache-hit != 'true'
+              working-directory: server
+              shell: pwsh
+              run: chore build-libs-cuda
+
+            - name: Build vibe-server (CUDA)
+              working-directory: server
+              shell: pwsh
+              env:
+                  VIBE_SERVER_COMMIT: ${{ github.sha }}
+              run: |
+                  $m = Select-String -Path crates/vibe-server/Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1
+                  if ($m) { $env:VIBE_SERVER_VERSION = "$($m.Matches[0].Groups[1].Value)-cuda" }
+                  "VIBE_SERVER_VERSION=$env:VIBE_SERVER_VERSION"
+                  cargo build -p vibe-server --release
+                  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+            # Fetches upstream's sidecars (ffmpeg is what we keep). It is a no-op when
+            # both files exist, so it runs before the CUDA server overwrites its own.
+            - name: Fetch upstream sidecars (ffmpeg)
+              shell: pwsh
+              run: chore setup ${{ env.TARGET_TRIPLE }}
+
+            - name: Install CUDA vibe-server sidecar
+              shell: pwsh
+              run: |
+                  Copy-Item -Force server/target/release/vibe-server.exe "desktop/src-tauri/binaries/vibe-server-$env:TARGET_TRIPLE.exe"
+                  Get-Item "desktop/src-tauri/binaries/vibe-server-$env:TARGET_TRIPLE.exe"
+
+            # cuBLAS is linked dynamically even with cudart_static; ship its DLLs beside the server.
+            - name: Stage cuBLAS DLLs
+              shell: pwsh
+              run: |
+                  $dest = "desktop/src-tauri/binaries/cuda"
+                  New-Item -ItemType Directory -Force -Path $dest | Out-Null
+                  $dirs = @("$env:CUDA_PATH\bin", "$env:CUDA_PATH\bin\x64") | Where-Object { Test-Path $_ }
+                  $dlls = foreach ($d in $dirs) { Get-ChildItem -Path $d -File -Filter "cublas*64_*.dll" | Where-Object { $_.Name -like "cublas64_*.dll" -or $_.Name -like "cublasLt64_*.dll" } }
+                  if (-not ($dlls | Where-Object { $_.Name -like "cublas64_*" })) { throw "cublas64_*.dll not found under $env:CUDA_PATH\bin" }
+                  if (-not ($dlls | Where-Object { $_.Name -like "cublasLt64_*" })) { throw "cublasLt64_*.dll not found under $env:CUDA_PATH\bin" }
+                  $dlls | ForEach-Object { Copy-Item -Force $_.FullName $dest }
+                  Get-ChildItem $dest
+
+            - name: Install frontend dependencies
+              working-directory: desktop
+              run: pnpm install
+
+            # No updater artifacts, so no TAURI_SIGNING_PRIVATE_KEY; no code signing.
+            - name: Build NSIS installer
+              working-directory: desktop
+              shell: pwsh
+              run: |
+                  pnpm exec tauri build --target $env:TARGET_TRIPLE --bundles nsis --config src-tauri/tauri.fork.conf.json
+                  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+            # The desktop crate is in the root Cargo workspace, so the bundle lands in target/ at the root.
+            - name: Upload installer
+              uses: actions/upload-artifact@v4
+              with:
+                  name: vibe-windows-cuda-installer
+                  path: |
+                      target/${{ env.TARGET_TRIPLE }}/release/bundle/nsis/*.exe
+                      desktop/src-tauri/target/${{ env.TARGET_TRIPLE }}/release/bundle/nsis/*.exe
+                  if-no-files-found: error
+
+            - name: Publish release
+              if: startsWith(github.ref, 'refs/tags/fork-v')
+              uses: softprops/action-gh-release@v2
+              with:
+                  tag_name: ${{ github.ref_name }}
+                  name: ${{ github.ref_name }}
+                  prerelease: false
+                  fail_on_unmatched_files: false
+                  files: |
+                      target/${{ env.TARGET_TRIPLE }}/release/bundle/nsis/*.exe
+                      desktop/src-tauri/target/${{ env.TARGET_TRIPLE }}/release/bundle/nsis/*.exe
